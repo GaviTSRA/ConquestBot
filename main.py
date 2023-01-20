@@ -63,30 +63,73 @@ def parse(data: str) -> dict[str, Attack]:
     return attacks
 
 
+def get_view(buildings):
+    async def select_callback(interaction: discord.Interaction):
+        await edit_embed(interaction, select.values[0])
+
+    async def button_callback(interaction: discord.Interaction):
+        class Tiles(discord.ui.Modal, title="Reclaimed Tiles"):
+            def __init__(self):
+                super().__init__()
+                self.add_item(discord.ui.TextInput(label="Amount"))
+
+            async def on_submit(self, interaction: discord.Interaction) -> None:
+                await edit_embed(interaction, "Tiles", int(str(self.children[0])), False)
+
+        await interaction.response.send_modal(Tiles())
+
+    select_building = discord.ui.View(timeout=None)
+    options_to_add = ["Mine", "Training Camp", "Material Storage", "House", "Laboratory", "Rift"]
+    options = []
+    for x in options_to_add:
+        if x in buildings:
+            options.append(discord.SelectOption(label=x, value=x, emoji=building_emojis[x]))
+    select = discord.ui.Select(options=options, min_values=1, max_values=1)
+    select.callback = select_callback
+    if "Tiles" in buildings:
+        button = discord.ui.Button(label="Add Tiles", emoji=building_emojis["Tiles"], style=discord.ButtonStyle.green)
+        button.callback = button_callback
+        select_building.add_item(button)
+    if len(options) > 0:
+        select_building.add_item(select)
+    return select_building
+
+
 async def edit_embed(interaction, selected_building, remove_amount=1, add_s=True):
     embed = interaction.message.embeds[0]
     total_lost = 0
     index = -1
+    buildings = []
+
     for i, field in enumerate(embed.fields):
         nums = re.search("s: \*\*[0-9]+\*\* \[[0-9]+\]", field.value).group()[5:]
+        amount, total = nums.split(" ")
+        amount = int(amount[:-2])
+
+        for building in building_emojis.keys():
+            if building in field.value and (amount-remove_amount > 0 or (selected_building not in field.value and amount > 0)):
+                buildings.append(building)
+
         if "Attacks" not in field.value:
             total_lost += int(nums.split(" ")[0][:-2])
         if selected_building in field.value:
             index = i
-            amount, total = nums.split(" ")
-            amount = int(amount[:-2])
+            selected_amount = amount
+            selected_total = total
             total_lost -= remove_amount
-        print(total_lost, field.value)
+
     await interaction.response.defer()
+
     if total_lost == 0:
         embed.color = discord.Color.green()
-    if index != -1 and amount > 0:
+
+    if index != -1:
         embed.remove_field(index)
         emoji = building_emojis.get(selected_building, "")
         if add_s:
             selected_building += "s"
-        embed.add_field(name="", value=f"{emoji} Stolen {selected_building}: **{max(amount-remove_amount, 0)}** {total}", inline=False)
-        await interaction.message.edit(embed=embed)
+        embed.add_field(name="", value=f"{emoji} Stolen {selected_building}: **{max(selected_amount-remove_amount, 0)}** {selected_total}", inline=False)
+        await interaction.message.edit(embed=embed, view=get_view(buildings))
 
 
 @bot.event
@@ -101,11 +144,15 @@ async def on_message(msg: discord.Message):
         for attacker, attack in attacks.items():
             embed = discord.Embed(title=f"{attacker} attacked!",
                                   description=f":crossed_swords: Attacks: **{attack.attack_times}**", color=discord.Color.from_rgb(255, 0, 0))
-            embed.add_field(
-                value=f"{building_emojis['Tiles']} Stolen Tiles: **{attack.tiles_stolen}** [{attack.tiles_stolen}]",
-                name=""
-            )
+            buildings = []
+            if int(attack.tiles_stolen) > 0:
+                buildings.append("Tiles")
+                embed.add_field(
+                    value=f"{building_emojis['Tiles']} Stolen Tiles: **{attack.tiles_stolen}** [{attack.tiles_stolen}]",
+                    name=""
+                )
             for amount, building in attack.stolen:
+                buildings.append(building)
                 emoji = building_emojis.get(building, "")
                 embed.add_field(
                     value=f"{emoji} Stolen {building}s: **{amount}** [{amount}]",
@@ -113,36 +160,7 @@ async def on_message(msg: discord.Message):
                     inline=False
                 )
 
-            async def select_callback(interaction: discord.Interaction):
-                await edit_embed(interaction, select.values[0])
-
-            async def button_callback(interaction: discord.Interaction):
-                class Tiles(discord.ui.Modal, title="Reclaimed Tiles"):
-                    def __init__(self):
-                        super().__init__()
-                        self.add_item(discord.ui.TextInput(label="Amount"))
-
-                    async def on_submit(self, interaction: discord.Interaction) -> None:
-                        await edit_embed(interaction, "Tiles", int(str(self.children[0])), False)
-                await interaction.response.send_modal(Tiles())
-
-            select_building = discord.ui.View(timeout=None)
-            select = discord.ui.Select(
-                options=[
-                    discord.SelectOption(label="Mine", value="Mine", emoji=building_emojis["Mine"]),
-                    discord.SelectOption(label="Training Camp", value="Training Camp", emoji=building_emojis["Training Camp"]),
-                    discord.SelectOption(label="Material Storage", value="Material Storage", emoji=building_emojis["Material Storage"]),
-                    discord.SelectOption(label="House", value="House", emoji=building_emojis["House"]),
-                    discord.SelectOption(label="Laboratory", value="Laboratory", emoji=building_emojis["Laboratory"]),
-                    discord.SelectOption(label="Rift", value="Rift", emoji=building_emojis["Rift"]),
-                ], min_values=1, max_values=1
-            )
-            select.callback = select_callback
-            button = discord.ui.Button(label="Add Tiles", emoji=building_emojis["Tiles"], style=discord.ButtonStyle.green)
-            button.callback = button_callback
-            select_building.add_item(button)
-            select_building.add_item(select)
-            await msg.channel.send(embed=embed, view=select_building)
+            await msg.channel.send(embed=embed, view=get_view(buildings))
         await msg.delete()
 
 
