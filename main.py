@@ -126,7 +126,7 @@ async def on_message(msg: discord.Message):
                         await edit_embed(interaction, "Tiles", int(str(self.children[0])), False)
                 await interaction.response.send_modal(Tiles())
 
-            select_building = discord.ui.View()
+            select_building = discord.ui.View(timeout=None)
             select = discord.ui.Select(
                 options=[
                     discord.SelectOption(label="Mine", value="Mine", emoji=building_emojis["Mine"]),
