@@ -120,7 +120,7 @@ async def edit_embed(interaction, selected_building, remove_amount=1, add_s=True
 
     await interaction.response.defer()
 
-    if total_lost == 0:
+    if total_lost <= 0:
         embed.color = discord.Color.green()
 
     if index != -1:
@@ -142,16 +142,19 @@ async def on_message(msg: discord.Message):
     if re.match("``conquest ⚐`` \*\*|\*\* Attacks on \*[a-z_]+\* since [/:0-9 ]+ UTC:", msg.content.split("\n")[0]):
         attacks = parse(msg.content)
         for attacker, attack in attacks.items():
+            total_lost = 0
             embed = discord.Embed(title=f"{attacker} attacked!",
                                   description=f":crossed_swords: Attacks: **{attack.attack_times}**", color=discord.Color.from_rgb(255, 0, 0))
             buildings = []
             if int(attack.tiles_stolen) > 0:
+                total_lost += int(attack.tiles_stolen)
                 buildings.append("Tiles")
                 embed.add_field(
                     value=f"{building_emojis['Tiles']} Stolen Tiles: **{attack.tiles_stolen}** [{attack.tiles_stolen}]",
                     name=""
                 )
             for amount, building in attack.stolen:
+                total_lost += int(amount)
                 buildings.append(building)
                 emoji = building_emojis.get(building, "")
                 embed.add_field(
@@ -159,6 +162,9 @@ async def on_message(msg: discord.Message):
                     name="",
                     inline=False
                 )
+
+            if total_lost <= 0:
+                embed.color = discord.Color.green()
 
             await msg.channel.send(embed=embed, view=get_view(buildings))
         await msg.delete()
